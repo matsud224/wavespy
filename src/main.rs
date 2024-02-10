@@ -1,8 +1,8 @@
-mod hierarchy_view;
+mod signal_finder;
 mod util;
 
 use gtk::prelude::*;
-use hierarchy_view::HierarchyView;
+use signal_finder::SignalFinder;
 use std::cmp;
 use std::io::BufRead;
 use std::{fs::File, io::BufReader, io::Error};
@@ -165,7 +165,7 @@ fn build_ui(application: &gtk::Application) {
     listbox2.append(&gtk::Label::new(Some("bar")));
     listbox2.append(&gtk::Label::new(Some("baz")));
 
-    let hier_view = HierarchyView::new(&header.items);
+    let signal_finder = SignalFinder::new(header.items);
 
     let wave_pane = gtk::Paned::builder()
         .start_child(&gtk::ScrolledWindow::builder().child(&listbox).build())
@@ -173,7 +173,7 @@ fn build_ui(application: &gtk::Application) {
         .build();
 
     let root_pane = gtk::Paned::builder()
-        .start_child(&hier_view.pane)
+        .start_child(&signal_finder.pane)
         .end_child(&wave_pane)
         .build();
 
