@@ -28,6 +28,10 @@ impl SignalFinder {
             .end_child(&gtk::ScrolledWindow::builder().child(&var_view).build())
             .build();
 
+        var_view.connect_row_activated(|_, path, _| {
+            println!("{:?}", path.indices());
+        });
+
         scope_view.connect_row_activated(move |_, path, _| {
             let var_store = gtk::TreeStore::new(&[glib::Type::STRING, glib::Type::STRING]);
             create_var_model(

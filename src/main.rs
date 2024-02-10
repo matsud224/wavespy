@@ -158,18 +158,11 @@ fn build_ui(application: &gtk::Application) {
     listbox.append(&gtk::Label::new(Some("bar")));
     listbox.append(&gtk::Label::new(Some("baz")));
 
-    let listbox2 = gtk::ListBox::builder()
-        .selection_mode(gtk::SelectionMode::None)
-        .build();
-    listbox2.append(&gtk::Label::new(Some("foo")));
-    listbox2.append(&gtk::Label::new(Some("bar")));
-    listbox2.append(&gtk::Label::new(Some("baz")));
-
     let signal_finder = SignalFinder::new(header.items);
 
     let wave_pane = gtk::Paned::builder()
         .start_child(&gtk::ScrolledWindow::builder().child(&listbox).build())
-        .end_child(&gtk::ScrolledWindow::builder().child(&listbox2).build())
+        .end_child(&gtk::ScrolledWindow::builder().child(&drawing_area).build())
         .build();
 
     let root_pane = gtk::Paned::builder()
