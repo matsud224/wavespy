@@ -33,6 +33,7 @@ fn build_ui(application: &gtk::Application) {
         .orientation(gtk::Orientation::Horizontal)
         .start_child(&signal_finder.pane)
         .end_child(&wave_viewer.pane)
+        .position(250)
         .build();
 
     window.set_child(Some(&root_pane));

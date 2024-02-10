@@ -16,6 +16,8 @@ impl SignalFinder {
         append_column("name", &mut scope_columns, &scope_view, None);
         scope_view.set_model(Some(&scope_store));
         scope_view.set_activate_on_single_click(true);
+        scope_view.expand_all();
+        scope_view.set_enable_tree_lines(true);
 
         let var_view = gtk::TreeView::builder().headers_visible(true).build();
         let mut var_columns: Vec<gtk::TreeViewColumn> = Vec::new();
