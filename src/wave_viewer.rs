@@ -27,13 +27,14 @@ pub struct WaveViewer {
 
 impl WaveViewer {
     pub fn new() -> WaveViewer {
-        let vector: Vec<IntegerObject> = (0..=100_000).map(IntegerObject::new).collect();
-        vector[3].add_child(10);
-        vector[5].add_child(100);
-        vector[5].add_child(200);
-        let result = gio::ListModel::new::<IntegerObject>();
-        let root = gtk::
-        let model = gtk::TreeListModel::new(true, false, true, create_model);
+        let rootobjs = vec![
+            IntegerObject::new(1, &[1, 2, 3]),
+            IntegerObject::new(2, &[4, 5, 6]),
+            IntegerObject::new(3, &[10, 20, 30]),
+            IntegerObject::new(4, &[100, 100, 100]),
+        ];
+        let root = create_root_model(&rootobjs);
+        let model = gtk::TreeListModel::new(root, false, true, create_model);
 
         let factory = gtk::SignalListItemFactory::new();
         factory.connect_setup(move |_, list_item| {
@@ -57,7 +58,9 @@ impl WaveViewer {
         });
 
         let selection_model = gtk::SingleSelection::new(Some(model));
+        selection_model.connect_selection_changed(|_, _, _| {});
         let list_view = gtk::ListView::new(Some(selection_model), Some(factory));
+        list_view.connect_activate(|_, _| {});
 
         let (_, wave, wave2) = parse_vcd("alu.vcd").expect("Error");
         let drawing_area = gtk::DrawingArea::builder()
@@ -81,15 +84,27 @@ impl WaveViewer {
     }
 }
 
-fn create_model(iobj: &IntegerObject) -> Option<&gio::ListModel> {
-    if iobj.children().is_empty() {
-        None
-    } else {
-        let result = gio::ListStore::new::<IntegerObject>();
-        for i in iobj.children() {
-            result.append(&IntegerObject::new(i));
+fn create_root_model(iobjs: &[IntegerObject]) -> gio::ListModel {
+    let result = gio::ListStore::new::<IntegerObject>();
+    for iobj in iobjs {
+        result.append(iobj);
+    }
+    result.upcast::<gio::ListModel>()
+}
+
+fn create_model(obj: &gtk::glib::Object) -> Option<gio::ListModel> {
+    if let Some(iobj) = obj.downcast_ref::<IntegerObject>() {
+        if iobj.children().is_empty() {
+            None
+        } else {
+            let result = gio::ListStore::new::<IntegerObject>();
+            for i in iobj.children() {
+                result.append(&IntegerObject::new(i, &[]));
+            }
+            Some(result.upcast::<gio::ListModel>())
         }
-        return Some(&gtk::TreeListModel::from(result));
+    } else {
+        None
     }
 }
 

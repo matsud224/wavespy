@@ -12,16 +12,16 @@ glib::wrapper! {
 }
 
 impl IntegerObject {
-    pub fn new(number: i32) -> Self {
-        Object::builder().property("number", number).build()
+    pub fn new(number: i32, nums: &[i32]) -> Self {
+        let iobj: Self = Object::builder().property("number", number).build();
+        iobj.imp().children.borrow_mut().extend_from_slice(nums);
+        iobj
     }
 
-    pub fn add_child(&self, i: i32) {
-        self.imp().children.borrow_mut().push(i);
-    }
+    pub fn add_nums(&self, nums: &[i32]) {}
 
-    pub fn children(&self) -> &Vec<i32> {
-        self.imp().children.borrow().as_ref()
+    pub fn children(&self) -> Vec<i32> {
+        self.imp().children.borrow().clone()
     }
 }
 
