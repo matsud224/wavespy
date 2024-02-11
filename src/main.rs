@@ -1,3 +1,4 @@
+mod integer_object;
 mod signal_finder;
 mod util;
 mod wave_viewer;

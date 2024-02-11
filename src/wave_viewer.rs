@@ -1,3 +1,5 @@
+use crate::integer_object::IntegerObject;
+use gtk::gio;
 use gtk::prelude::*;
 use std::cmp;
 use std::fs::File;
@@ -25,15 +27,39 @@ pub struct WaveViewer {
 
 impl WaveViewer {
     pub fn new() -> WaveViewer {
+        let vector: Vec<IntegerObject> = (0..=100_000).map(IntegerObject::new).collect();
+        vector[3].add_child(10);
+        vector[5].add_child(100);
+        vector[5].add_child(200);
+        let result = gio::ListModel::new::<IntegerObject>();
+        let root = gtk::
+        let model = gtk::TreeListModel::new(true, false, true, create_model);
+
+        let factory = gtk::SignalListItemFactory::new();
+        factory.connect_setup(move |_, list_item| {
+            let expander = gtk::TreeExpander::new();
+            let label = gtk::Label::new(None);
+            expander.set_child(Some(&label));
+            list_item.set_child(Some(&expander));
+        });
+        factory.connect_bind(move |_, list_item| {
+            let list_item = list_item.downcast_ref::<gtk::ListItem>().unwrap();
+            if let Some(row) = list_item.item().and_downcast::<gtk::TreeListRow>() {
+                if let Some(iobj) = row.item().and_downcast::<IntegerObject>() {
+                    if let Some(expander) = list_item.child().and_downcast::<gtk::TreeExpander>() {
+                        expander.set_list_row(Some(&row));
+                        if let Some(label) = expander.child().and_downcast::<gtk::Label>() {
+                            label.set_label(&iobj.number().to_string());
+                        }
+                    }
+                }
+            }
+        });
+
+        let selection_model = gtk::SingleSelection::new(Some(model));
+        let list_view = gtk::ListView::new(Some(selection_model), Some(factory));
+
         let (_, wave, wave2) = parse_vcd("alu.vcd").expect("Error");
-
-        let listbox = gtk::ListBox::builder()
-            .selection_mode(gtk::SelectionMode::None)
-            .build();
-        listbox.append(&gtk::Label::new(Some("foo")));
-        listbox.append(&gtk::Label::new(Some("bar")));
-        listbox.append(&gtk::Label::new(Some("baz")));
-
         let drawing_area = gtk::DrawingArea::builder()
             .content_width(1000)
             .content_height(500)
@@ -47,11 +73,23 @@ impl WaveViewer {
 
         let pane = gtk::Paned::builder()
             .orientation(gtk::Orientation::Horizontal)
-            .start_child(&gtk::ScrolledWindow::builder().child(&listbox).build())
+            .start_child(&gtk::ScrolledWindow::builder().child(&list_view).build())
             .end_child(&gtk::ScrolledWindow::builder().child(&drawing_area).build())
             .build();
 
         WaveViewer { pane }
+    }
+}
+
+fn create_model(iobj: &IntegerObject) -> Option<&gio::ListModel> {
+    if iobj.children().is_empty() {
+        None
+    } else {
+        let result = gio::ListStore::new::<IntegerObject>();
+        for i in iobj.children() {
+            result.append(&IntegerObject::new(i));
+        }
+        return Some(&gtk::TreeListModel::from(result));
     }
 }
 
