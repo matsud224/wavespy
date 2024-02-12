@@ -32,8 +32,9 @@ fn build_ui(application: &gtk::Application) {
 
     let root_pane = gtk::Paned::builder()
         .orientation(gtk::Orientation::Horizontal)
-        .start_child(&wave_viewer.pane)
-        .end_child(&signal_finder.pane)
+        .start_child(&signal_finder.pane)
+        .end_child(&wave_viewer.pane)
+        .wide_handle(true)
         .position(250)
         .build();
 
