@@ -1,6 +1,6 @@
-mod integer_object;
 mod signal_finder;
 mod util;
+mod wave_object;
 mod wave_viewer;
 
 use crate::signal_finder::SignalFinder;
@@ -22,13 +22,14 @@ fn build_ui(application: &gtk::Application) {
 
     window.set_title(Some("WaveSpy"));
     window.set_default_size(1200, 600);
+    window.present();
 
     let mut reader = Parser::new(BufReader::new(
         File::open("alu.vcd").expect("open file failed"),
     ));
     let header = reader.parse_header().expect("parse header failed");
     let signal_finder = SignalFinder::new(header.items);
-    let wave_viewer = WaveViewer::new();
+    let wave_viewer = WaveViewer::new(&window);
 
     let root_pane = gtk::Paned::builder()
         .orientation(gtk::Orientation::Horizontal)

@@ -1,5 +1,6 @@
-use crate::integer_object::IntegerObject;
+use crate::wave_object::WaveObject;
 use gtk::gio;
+use gtk::glib;
 use gtk::prelude::*;
 use std::cmp;
 use std::fs::File;
@@ -10,6 +11,7 @@ use vcd::*;
 
 type SimTime = u64;
 
+#[derive(Clone, Debug, Default)]
 pub struct WaveValue {
     pub time: SimTime,
     pub value: String,
@@ -26,57 +28,99 @@ pub struct WaveViewer {
 }
 
 impl WaveViewer {
-    pub fn new() -> WaveViewer {
-        let rootobjs = vec![
-            IntegerObject::new(1, &[1, 2, 3]),
-            IntegerObject::new(2, &[4, 5, 6]),
-            IntegerObject::new(3, &[10, 20, 30]),
-            IntegerObject::new(4, &[100, 100, 100]),
-        ];
-        let root = create_root_model(&rootobjs);
-        let model = gtk::TreeListModel::new(root, false, true, create_model);
-
-        let factory = gtk::SignalListItemFactory::new();
-        factory.connect_setup(move |_, list_item| {
-            let expander = gtk::TreeExpander::new();
-            let label = gtk::Label::new(None);
-            expander.set_child(Some(&label));
-            list_item.set_child(Some(&expander));
-        });
-        factory.connect_bind(move |_, list_item| {
-            let list_item = list_item.downcast_ref::<gtk::ListItem>().unwrap();
-            if let Some(row) = list_item.item().and_downcast::<gtk::TreeListRow>() {
-                if let Some(iobj) = row.item().and_downcast::<IntegerObject>() {
-                    if let Some(expander) = list_item.child().and_downcast::<gtk::TreeExpander>() {
-                        expander.set_list_row(Some(&row));
-                        if let Some(label) = expander.child().and_downcast::<gtk::Label>() {
-                            label.set_label(&iobj.number().to_string());
-                        }
-                    }
-                }
-            }
-        });
-
-        let selection_model = gtk::SingleSelection::new(Some(model));
-        selection_model.connect_selection_changed(|_, _, _| {});
-        let list_view = gtk::ListView::new(Some(selection_model), Some(factory));
-        list_view.connect_activate(|_, _| {});
-
-        let (_, wave, wave2) = parse_vcd("alu.vcd").expect("Error");
+    pub fn new(parent: &impl IsA<gtk::Window>) -> WaveViewer {
         let drawing_area = gtk::DrawingArea::builder()
             .content_width(1000)
             .content_height(500)
             .build();
 
-        drawing_area.set_draw_func(move |_area, cr, width, _height| {
-            draw_wave(cr, width, &wave, 0);
-            draw_wave(cr, width, &wave2, 1);
-            draw_wave(cr, width, &wave, 2);
+        let rootobjs = vec![
+            extract_wave_from_vcd("alu.vcd", vec!["instance".into(), "cin".into()]).unwrap(),
+            extract_wave_from_vcd("alu.vcd", vec!["instance".into(), "cout".into()]).unwrap(),
+            extract_wave_from_vcd("alu.vcd", vec!["instance".into(), "n".into()]).unwrap(),
+        ];
+        let root = create_root_model(&rootobjs);
+        let model = gtk::TreeListModel::new(
+            root.clone().upcast::<gio::ListModel>(),
+            false,
+            true,
+            create_model,
+        );
+
+        let selection_model = gtk::SingleSelection::new(Some(model));
+        let factory = gtk::SignalListItemFactory::new();
+        let list_view = gtk::ListView::new(
+            Some(selection_model),
+            None as Option<gtk::SignalListItemFactory>,
+        );
+        let list_view_cloned = list_view.clone();
+        factory.connect_setup(move |_, list_item| {
+            let expander = gtk::TreeExpander::new();
+            let label = gtk::Label::new(None);
+            expander.set_child(Some(&label));
+            expander.set_margin_top(5);
+            expander.set_margin_bottom(5);
+            list_item.set_child(Some(&expander));
         });
+        factory.connect_bind(glib::clone!(@strong drawing_area => move |_, list_item| {
+            let list_item = list_item.downcast_ref::<gtk::ListItem>().unwrap();
+            if let Some(row) = list_item.item().and_downcast::<gtk::TreeListRow>() {
+                if let Some(wobj) = row.item().and_downcast::<WaveObject>() {
+                    if let Some(expander) = list_item.child().and_downcast::<gtk::TreeExpander>() {
+                        expander.set_list_row(Some(&row));
+                        if let Some(label) = expander.child().and_downcast::<gtk::Label>() {
+                            label.set_label(&wobj.name());
+                            let bounds = expander.compute_bounds(&list_view_cloned);
+                            if let Some(bounds)  = bounds {
+                                wobj.set_y_position(bounds.y());
+                                wobj.set_height(bounds.height());
+                                drawing_area.queue_draw();
+                            }
+                        }
+                    }
+                }
+            }
+        }));
+
+        list_view.set_factory(Some(&factory));
+
+        drawing_area.set_draw_func(
+            glib::clone!(@strong root => move |_area, cr, width, _height| {
+                for i in 0..root.n_items() {
+                    draw_wave(cr, width, &root.item(i).and_downcast::<WaveObject>().unwrap());
+                }
+            }),
+        );
+
+        let hbox = gtk::Box::builder()
+            .orientation(gtk::Orientation::Horizontal)
+            .build();
+        let entry = gtk::Entry::builder()
+            .placeholder_text("signal name")
+            .build();
+        let button = gtk::Button::builder().label("Add signal").build();
+        button.connect_clicked(
+            glib::clone!(@strong entry, @strong root, @strong drawing_area, @strong parent => move |_| {
+                let v :Vec<String> = entry.text().split('.').map(String::from).collect();
+                let wobj = &extract_wave_from_vcd("alu.vcd", v);
+                if let Ok(wobj) = wobj {
+                    root.append(wobj);
+                    drawing_area.queue_draw();
+                }
+            }),
+        );
+        hbox.append(&entry);
+        hbox.append(&button);
+
+        let vbox = gtk::Box::builder()
+            .orientation(gtk::Orientation::Vertical)
+            .build();
+        vbox.append(&list_view);
+        vbox.append(&hbox);
 
         let pane = gtk::Paned::builder()
             .orientation(gtk::Orientation::Horizontal)
-            .start_child(&gtk::ScrolledWindow::builder().child(&list_view).build())
+            .start_child(&gtk::ScrolledWindow::builder().child(&vbox).build())
             .end_child(&gtk::ScrolledWindow::builder().child(&drawing_area).build())
             .build();
 
@@ -84,36 +128,38 @@ impl WaveViewer {
     }
 }
 
-fn create_root_model(iobjs: &[IntegerObject]) -> gio::ListModel {
-    let result = gio::ListStore::new::<IntegerObject>();
-    for iobj in iobjs {
-        result.append(iobj);
+fn create_root_model(wobjs: &[WaveObject]) -> gio::ListStore {
+    let result = gio::ListStore::new::<WaveObject>();
+    for wobj in wobjs {
+        result.append(wobj);
     }
-    result.upcast::<gio::ListModel>()
+    result
 }
 
-fn create_model(obj: &gtk::glib::Object) -> Option<gio::ListModel> {
-    if let Some(iobj) = obj.downcast_ref::<IntegerObject>() {
+fn create_model(_obj: &gtk::glib::Object) -> Option<gio::ListModel> {
+    /*
+    if let Some(iobj) = obj.downcast_ref::<WaveObject>() {
         if iobj.children().is_empty() {
             None
         } else {
-            let result = gio::ListStore::new::<IntegerObject>();
+            let result = gio::ListStore::new::<WaveObject>();
             for i in iobj.children() {
-                result.append(&IntegerObject::new(i, &[]));
+                result.append(&WaveObject::new(i, &[]));
             }
             Some(result.upcast::<gio::ListModel>())
         }
     } else {
         None
     }
+    */
+    None
 }
 
-fn draw_wave(cr: &gtk::cairo::Context, width: i32, wave: &[WaveValue], line_number: u64) {
-    const MARGIN_BETWEEN_LINE: u64 = 5;
+fn draw_wave(cr: &gtk::cairo::Context, width: i32, wobj: &WaveObject) {
     const MARGIN_LEFT: u64 = 5;
-    const MARGIN_TOP: u64 = 5;
-    const LINE_HEIGHT: u64 = 20;
 
+    let wdata = wobj.wave_data();
+    let wave = &wdata.borrow().data;
     let start_time: u64 = 0;
     let end_time: u64 = 600000;
 
@@ -133,8 +179,8 @@ fn draw_wave(cr: &gtk::cairo::Context, width: i32, wave: &[WaveValue], line_numb
                 let section_right = section_left
                     + ((section_end_time - section_start_time) * (width as u64)
                         / (end_time - start_time + 1));
-                let section_top = MARGIN_TOP + line_number * (LINE_HEIGHT + MARGIN_BETWEEN_LINE);
-                let section_bottom = section_top + LINE_HEIGHT;
+                let section_top = wdata.borrow().y_position.get();
+                let section_bottom = wdata.borrow().y_position.get() + wdata.borrow().height.get();
 
                 let section_value = if a.value == "0" { 0 } else { 1 };
                 let is_value_changed = a.value != b.value;
@@ -197,17 +243,10 @@ fn get_wave<T: BufRead>(id: &IdCode, parser: &mut Parser<T>) -> Result<Vec<WaveV
     Ok(wave)
 }
 
-fn parse_vcd(filename: &str) -> Result<(vcd::Header, Vec<WaveValue>, Vec<WaveValue>), Error> {
+fn extract_wave_from_vcd(filename: &str, path: Vec<String>) -> Result<WaveObject, Error> {
     let mut reader = Parser::new(BufReader::new(File::open(filename)?));
     let header = reader.parse_header()?;
-
-    let var = &header.find_var(&["instance", "cin"]).unwrap();
-    let var2 = &header.find_var(&["instance", "cout"]).unwrap();
+    let var = &header.find_var(&path).unwrap();
     let wave = get_wave(&var.code, &mut reader).expect("failed to get data");
-    let mut reader2 = Parser::new(BufReader::new(File::open(filename)?));
-    let wave2 = get_wave(&var2.code, &mut reader2).expect("failed to get data");
-    for w in &wave {
-        println!("{}: {}", w.time, w.value);
-    }
-    Ok((header, wave, wave2))
+    Ok(WaveObject::new(path.join("."), path, wave))
 }
