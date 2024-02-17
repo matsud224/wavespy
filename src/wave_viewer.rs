@@ -1,12 +1,13 @@
 use crate::wave_object::WaveObject;
-use gtk::gio;
 use gtk::glib;
 use gtk::prelude::*;
+use std::cell::RefCell;
 use std::cmp;
 use std::fs::File;
 use std::io::BufRead;
 use std::io::BufReader;
 use std::io::Error;
+use std::rc::Rc;
 use vcd::*;
 
 type SimTime = u64;
@@ -24,70 +25,51 @@ impl WaveValue {
 }
 
 pub struct WaveViewer {
-    pub pane: gtk::Paned,
+    pub pane: gtk::Box,
 }
+
+static ROW_HEIGHT: u64 = 25;
+static MARGIN_UP_DOWN: u64 = 5;
+static MARGIN_LEFT: u64 = 5;
 
 impl WaveViewer {
     pub fn new(parent: &impl IsA<gtk::Window>) -> WaveViewer {
-        let drawing_area = gtk::DrawingArea::builder()
-            .content_width(1000)
-            .content_height(500)
+        let name_area = gtk::DrawingArea::builder()
+            .content_width(200)
+            .content_height(1000)
             .build();
 
-        let rootobjs = vec![
+        let wave_area = gtk::DrawingArea::builder()
+            .content_width(1000)
+            .content_height(1000)
+            .build();
+
+        let rootobjs = Rc::new(RefCell::new(vec![
             extract_wave_from_vcd("alu.vcd", vec!["instance".into(), "cin".into()]).unwrap(),
             extract_wave_from_vcd("alu.vcd", vec!["instance".into(), "cout".into()]).unwrap(),
             extract_wave_from_vcd("alu.vcd", vec!["instance".into(), "n".into()]).unwrap(),
-        ];
-        let root = create_root_model(&rootobjs);
-        let model = gtk::TreeListModel::new(
-            root.clone().upcast::<gio::ListModel>(),
-            false,
-            true,
-            create_model,
-        );
+        ]));
 
-        let selection_model = gtk::SingleSelection::new(Some(model));
-        let factory = gtk::SignalListItemFactory::new();
-        let list_view = gtk::ListView::new(
-            Some(selection_model),
-            None as Option<gtk::SignalListItemFactory>,
-        );
-        let list_view_cloned = list_view.clone();
-        factory.connect_setup(move |_, list_item| {
-            let expander = gtk::TreeExpander::new();
-            let label = gtk::Label::new(None);
-            expander.set_child(Some(&label));
-            expander.set_margin_top(5);
-            expander.set_margin_bottom(5);
-            list_item.set_child(Some(&expander));
-        });
-        factory.connect_bind(glib::clone!(@strong drawing_area => move |_, list_item| {
-            let list_item = list_item.downcast_ref::<gtk::ListItem>().unwrap();
-            if let Some(row) = list_item.item().and_downcast::<gtk::TreeListRow>() {
-                if let Some(wobj) = row.item().and_downcast::<WaveObject>() {
-                    if let Some(expander) = list_item.child().and_downcast::<gtk::TreeExpander>() {
-                        expander.set_list_row(Some(&row));
-                        if let Some(label) = expander.child().and_downcast::<gtk::Label>() {
-                            label.set_label(&wobj.name());
-                            let bounds = expander.compute_bounds(&list_view_cloned);
-                            if let Some(bounds)  = bounds {
-                                wobj.set_y_position(bounds.y());
-                                wobj.set_height(bounds.height());
-                                drawing_area.queue_draw();
-                            }
-                        }
-                    }
+        name_area.set_draw_func(
+            glib::clone!(@strong rootobjs => move |_area, cr, width, _height| {
+                cr.set_source_rgb(0.0, 0.0, 0.0);
+                cr.paint().unwrap();
+
+                let mut y = 0;
+                for wobj in rootobjs.borrow().iter() {
+                    y += draw_wave_name(cr, y, width, wobj);
                 }
-            }
-        }));
+            }),
+        );
 
-        list_view.set_factory(Some(&factory));
+        wave_area.set_draw_func(
+            glib::clone!(@strong rootobjs => move |_area, cr, width, _height| {
+                cr.set_source_rgb(0.0, 0.0, 0.0);
+                cr.paint().unwrap();
 
-        drawing_area.set_draw_func(
-            glib::clone!(@strong root => move |_area, cr, width, _height| {
-                for i in 0..root.n_items() {
-                    draw_wave(cr, width, &root.item(i).and_downcast::<WaveObject>().unwrap());
+                let mut y = 0;
+                for wobj in rootobjs.borrow().iter() {
+                    y += draw_wave(cr, y, width, wobj);
                 }
             }),
         );
@@ -100,70 +82,78 @@ impl WaveViewer {
             .build();
         let button = gtk::Button::builder().label("Add signal").build();
         button.connect_clicked(
-            glib::clone!(@strong entry, @strong root, @strong drawing_area, @strong parent => move |_| {
+            glib::clone!(@strong entry, @strong rootobjs, @strong name_area, @strong wave_area, @strong parent => move |_| {
                 let v :Vec<String> = entry.text().split('.').map(String::from).collect();
-                let wobj = &extract_wave_from_vcd("alu.vcd", v);
+                let wobj = extract_wave_from_vcd("alu.vcd", v);
                 if let Ok(wobj) = wobj {
-                    root.append(wobj);
-                    drawing_area.queue_draw();
+                    rootobjs.borrow_mut().push(wobj);
+                    name_area.queue_draw();
+                    wave_area.queue_draw();
                 }
             }),
         );
         hbox.append(&entry);
         hbox.append(&button);
 
+        let main_area = gtk::ScrolledWindow::builder()
+            .child(
+                &gtk::Paned::builder()
+                    .orientation(gtk::Orientation::Horizontal)
+                    .start_child(
+                        &gtk::ScrolledWindow::builder()
+                            .child(&name_area)
+                            .vscrollbar_policy(gtk::PolicyType::Never)
+                            .hscrollbar_policy(gtk::PolicyType::Automatic)
+                            .build(),
+                    )
+                    .end_child(
+                        &gtk::ScrolledWindow::builder()
+                            .child(&wave_area)
+                            .vscrollbar_policy(gtk::PolicyType::Never)
+                            .hscrollbar_policy(gtk::PolicyType::Always)
+                            .build(),
+                    )
+                    .wide_handle(true)
+                    .build(),
+            )
+            .min_content_height(400)
+            .vscrollbar_policy(gtk::PolicyType::Always)
+            .build();
+
         let vbox = gtk::Box::builder()
             .orientation(gtk::Orientation::Vertical)
+            .homogeneous(false)
             .build();
-        vbox.append(&list_view);
         vbox.append(&hbox);
+        vbox.append(&main_area);
 
-        let pane = gtk::Paned::builder()
-            .orientation(gtk::Orientation::Horizontal)
-            .start_child(&gtk::ScrolledWindow::builder().child(&vbox).build())
-            .end_child(&gtk::ScrolledWindow::builder().child(&drawing_area).build())
-            .build();
-
-        WaveViewer { pane }
+        WaveViewer { pane: vbox }
     }
 }
 
-fn create_root_model(wobjs: &[WaveObject]) -> gio::ListStore {
-    let result = gio::ListStore::new::<WaveObject>();
-    for wobj in wobjs {
-        result.append(wobj);
-    }
-    result
+fn draw_wave_name(cr: &gtk::cairo::Context, y: u64, width: i32, wobj: &WaveObject) -> u64 {
+    let wdata = wobj.wave_data();
+
+    cr.set_source_rgb(1.0, 1.0, 1.0);
+    cr.set_line_join(gtk::cairo::LineJoin::Bevel);
+    cr.move_to(MARGIN_LEFT as f64, (y + ROW_HEIGHT - MARGIN_UP_DOWN) as f64);
+    cr.show_text(wdata.borrow().name.as_str()).unwrap();
+    cr.stroke().unwrap();
+
+    cr.move_to(0 as f64, (y + ROW_HEIGHT) as f64);
+    cr.line_to(width as f64, (y + ROW_HEIGHT) as f64);
+    cr.stroke().unwrap();
+
+    ROW_HEIGHT
 }
 
-fn create_model(_obj: &gtk::glib::Object) -> Option<gio::ListModel> {
-    /*
-    if let Some(iobj) = obj.downcast_ref::<WaveObject>() {
-        if iobj.children().is_empty() {
-            None
-        } else {
-            let result = gio::ListStore::new::<WaveObject>();
-            for i in iobj.children() {
-                result.append(&WaveObject::new(i, &[]));
-            }
-            Some(result.upcast::<gio::ListModel>())
-        }
-    } else {
-        None
-    }
-    */
-    None
-}
-
-fn draw_wave(cr: &gtk::cairo::Context, width: i32, wobj: &WaveObject) {
-    const MARGIN_LEFT: u64 = 5;
-
+fn draw_wave(cr: &gtk::cairo::Context, y: u64, width: i32, wobj: &WaveObject) -> u64 {
     let wdata = wobj.wave_data();
     let wave = &wdata.borrow().data;
     let start_time: u64 = 0;
     let end_time: u64 = 600000;
 
-    cr.set_source_rgb(0.0, 0.0, 0.0);
+    cr.set_source_rgb(1.0, 1.0, 1.0);
     cr.set_line_join(gtk::cairo::LineJoin::Bevel);
 
     let window_iter = wave.windows(2);
@@ -179,8 +169,8 @@ fn draw_wave(cr: &gtk::cairo::Context, width: i32, wobj: &WaveObject) {
                 let section_right = section_left
                     + ((section_end_time - section_start_time) * (width as u64)
                         / (end_time - start_time + 1));
-                let section_top = wdata.borrow().y_position.get();
-                let section_bottom = wdata.borrow().y_position.get() + wdata.borrow().height.get();
+                let section_top = y + MARGIN_UP_DOWN;
+                let section_bottom = y + ROW_HEIGHT - MARGIN_UP_DOWN;
 
                 let section_value = if a.value == "0" { 0 } else { 1 };
                 let is_value_changed = a.value != b.value;
@@ -211,10 +201,16 @@ fn draw_wave(cr: &gtk::cairo::Context, width: i32, wobj: &WaveObject) {
                         },
                     );
                 }
+                cr.stroke().unwrap();
             }
         }
     }
+
+    cr.move_to(0 as f64, (y + ROW_HEIGHT) as f64);
+    cr.line_to(width as f64, (y + ROW_HEIGHT) as f64);
     cr.stroke().unwrap();
+
+    ROW_HEIGHT
 }
 
 fn get_wave<T: BufRead>(id: &IdCode, parser: &mut Parser<T>) -> Result<Vec<WaveValue>, Error> {

@@ -1,13 +1,10 @@
 mod imp;
 use crate::wave_viewer::WaveValue;
-
 use glib::Object;
 use gtk::glib::property::PropertySet;
 use gtk::glib::{self, subclass::types::ObjectSubclassIsExt};
-use std::borrow::BorrowMut;
 use std::cell::Cell;
 use std::cell::RefCell;
-use std::ops::DerefMut;
 use std::rc::Rc;
 
 glib::wrapper! {
