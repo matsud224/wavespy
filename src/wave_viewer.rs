@@ -30,11 +30,12 @@ pub struct WaveViewer {
 
 static ROW_HEIGHT: u64 = 25;
 static MARGIN_UP_DOWN: u64 = 5;
-static MARGIN_LEFT: u64 = 5;
+static MARGIN_SIDE: u64 = 5;
 
 impl WaveViewer {
-    pub fn new(parent: &impl IsA<gtk::Window>) -> WaveViewer {
+    pub fn new(_parent: &impl IsA<gtk::Window>) -> WaveViewer {
         let name_area = gtk::DrawingArea::builder().build();
+        let value_area = gtk::DrawingArea::builder().build();
         let wave_area = gtk::DrawingArea::builder().build();
 
         let rootobjs = Rc::new(RefCell::new(vec![
@@ -45,22 +46,41 @@ impl WaveViewer {
 
         name_area.set_draw_func(
             glib::clone!(@strong rootobjs => move |area, cr, width, _height| {
-                cr.set_source_rgb(0.0, 0.0, 0.0);
-                cr.paint().unwrap();
+                draw_background(cr);
 
+                let mut max_w : u64 = 0;
                 let mut y = 0;
                 for wobj in rootobjs.borrow().iter() {
-                    y += draw_wave_name(cr, y, width, wobj);
+                    let (w, h) = draw_wave_name(cr, y, width, wobj);
+                    y += h;
+                    max_w = u64::max(max_w, w);
                 }
 
+                area.set_content_width(max_w as i32);
+                area.set_content_height(y as i32);
+            }),
+        );
+
+        value_area.set_draw_func(
+            glib::clone!(@strong rootobjs => move |area, cr, width, _height| {
+                draw_background(cr);
+
+                let mut max_w : u64 = 0;
+                let mut y = 0;
+                for wobj in rootobjs.borrow().iter() {
+                    let (w, h) = draw_wave_value(cr, y, width, wobj);
+                    y += h;
+                    max_w = u64::max(max_w, w);
+                }
+
+                area.set_content_width(max_w as i32);
                 area.set_content_height(y as i32);
             }),
         );
 
         wave_area.set_draw_func(
             glib::clone!(@strong rootobjs => move |area, cr, width, _height| {
-                cr.set_source_rgb(0.0, 0.0, 0.0);
-                cr.paint().unwrap();
+                draw_background(cr);
 
                 let mut y = 0;
                 for wobj in rootobjs.borrow().iter() {
@@ -79,12 +99,13 @@ impl WaveViewer {
             .build();
         let button = gtk::Button::builder().label("Add signal").build();
         button.connect_clicked(
-            glib::clone!(@strong entry, @strong rootobjs, @strong name_area, @strong wave_area, @strong parent => move |_| {
+            glib::clone!(@strong entry, @strong rootobjs, @strong name_area, @strong value_area, @strong wave_area => move |_| {
                 let v :Vec<String> = entry.text().split('.').map(String::from).collect();
                 let wobj = extract_wave_from_vcd("alu.vcd", v);
                 if let Ok(wobj) = wobj {
                     rootobjs.borrow_mut().push(wobj);
                     name_area.queue_draw();
+                    value_area.queue_draw();
                     wave_area.queue_draw();
                 }
             }),
@@ -97,12 +118,27 @@ impl WaveViewer {
                 &gtk::Paned::builder()
                     .orientation(gtk::Orientation::Horizontal)
                     .start_child(
-                        &gtk::ScrolledWindow::builder()
-                            .child(&name_area)
-                            .vscrollbar_policy(gtk::PolicyType::Never)
-                            .hscrollbar_policy(gtk::PolicyType::Automatic)
-                            .vexpand(true)
-                            .hexpand(true)
+                        &gtk::Paned::builder()
+                            .orientation(gtk::Orientation::Horizontal)
+                            .position(100)
+                            .start_child(
+                                &gtk::ScrolledWindow::builder()
+                                    .child(&name_area)
+                                    .vscrollbar_policy(gtk::PolicyType::Never)
+                                    .hscrollbar_policy(gtk::PolicyType::Automatic)
+                                    .vexpand(true)
+                                    .hexpand(true)
+                                    .build(),
+                            )
+                            .end_child(
+                                &gtk::ScrolledWindow::builder()
+                                    .child(&value_area)
+                                    .vscrollbar_policy(gtk::PolicyType::Never)
+                                    .hscrollbar_policy(gtk::PolicyType::Automatic)
+                                    .vexpand(true)
+                                    .hexpand(true)
+                                    .build(),
+                            )
                             .build(),
                     )
                     .end_child(
@@ -115,11 +151,10 @@ impl WaveViewer {
                             .build(),
                     )
                     .wide_handle(true)
-                    .position(100)
+                    .position(200)
                     .build(),
             )
-            .min_content_height(600)
-            .vscrollbar_policy(gtk::PolicyType::Always)
+            .vscrollbar_policy(gtk::PolicyType::Automatic)
             .hscrollbar_policy(gtk::PolicyType::Never)
             .build();
 
@@ -134,20 +169,67 @@ impl WaveViewer {
     }
 }
 
-fn draw_wave_name(cr: &gtk::cairo::Context, y: u64, width: i32, wobj: &WaveObject) -> u64 {
+fn draw_background(cr: &gtk::cairo::Context) {
+    cr.set_source_rgb(0.0, 0.0, 0.0);
+    cr.paint().unwrap();
+}
+
+enum Align {
+    Right,
+    Left,
+}
+
+fn draw_text(cr: &gtk::cairo::Context, y: u64, width: i32, align: Align, text: &str) {
+    let text_ext = cr.text_extents(text).unwrap();
+    match align {
+        Align::Left => {
+            cr.move_to(MARGIN_SIDE as f64, (y + ROW_HEIGHT - MARGIN_UP_DOWN) as f64);
+        }
+        Align::Right => {
+            cr.move_to(
+                width as f64 - MARGIN_SIDE as f64 - text_ext.width(),
+                (y + ROW_HEIGHT - MARGIN_UP_DOWN) as f64,
+            );
+        }
+    }
+
+    cr.show_text(text).ok();
+}
+
+fn draw_wave_name(cr: &gtk::cairo::Context, y: u64, width: i32, wobj: &WaveObject) -> (u64, u64) {
     let wdata = wobj.wave_data();
+    let text = wdata.borrow().name.clone();
+    let text_ext = cr.text_extents(&text).unwrap();
 
     cr.set_source_rgb(1.0, 1.0, 1.0);
     cr.set_line_join(gtk::cairo::LineJoin::Bevel);
-    cr.move_to(MARGIN_LEFT as f64, (y + ROW_HEIGHT - MARGIN_UP_DOWN) as f64);
-    cr.show_text(wdata.borrow().name.as_str()).unwrap();
+
+    draw_text(cr, y, width, Align::Left, &text);
     cr.stroke().unwrap();
 
     cr.move_to(0 as f64, (y + ROW_HEIGHT) as f64);
     cr.line_to(width as f64, (y + ROW_HEIGHT) as f64);
     cr.stroke().unwrap();
 
-    ROW_HEIGHT
+    (MARGIN_SIDE * 2 + text_ext.width() as u64, ROW_HEIGHT)
+}
+
+fn draw_wave_value(cr: &gtk::cairo::Context, y: u64, width: i32, wobj: &WaveObject) -> (u64, u64) {
+    let _wdata = wobj.wave_data();
+    let text = ((width as u64 + y) % 2).to_string().repeat(32);
+    let text_ext = cr.text_extents(&text).unwrap();
+
+    cr.set_source_rgb(1.0, 1.0, 1.0);
+    cr.set_line_join(gtk::cairo::LineJoin::Bevel);
+
+    draw_text(cr, y, width, Align::Right, &text);
+    cr.stroke().unwrap();
+
+    cr.move_to(0 as f64, (y + ROW_HEIGHT) as f64);
+    cr.line_to(width as f64, (y + ROW_HEIGHT) as f64);
+    cr.stroke().unwrap();
+
+    (MARGIN_SIDE * 2 + text_ext.width() as u64, ROW_HEIGHT)
 }
 
 fn draw_wave(cr: &gtk::cairo::Context, y: u64, width: i32, wobj: &WaveObject) -> u64 {
@@ -166,9 +248,8 @@ fn draw_wave(cr: &gtk::cairo::Context, y: u64, width: i32, wobj: &WaveObject) ->
                 let section_start_time = cmp::max(start_time, a.time);
                 let section_end_time = cmp::min(end_time, b.time);
 
-                let section_left = MARGIN_LEFT
-                    + ((section_start_time - start_time) * (width as u64)
-                        / (end_time - start_time + 1));
+                let section_left = (section_start_time - start_time) * (width as u64)
+                    / (end_time - start_time + 1);
                 let section_right = section_left
                     + ((section_end_time - section_start_time) * (width as u64)
                         / (end_time - start_time + 1));
