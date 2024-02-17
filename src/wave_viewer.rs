@@ -34,15 +34,8 @@ static MARGIN_LEFT: u64 = 5;
 
 impl WaveViewer {
     pub fn new(parent: &impl IsA<gtk::Window>) -> WaveViewer {
-        let name_area = gtk::DrawingArea::builder()
-            .content_width(200)
-            .content_height(1000)
-            .build();
-
-        let wave_area = gtk::DrawingArea::builder()
-            .content_width(1000)
-            .content_height(1000)
-            .build();
+        let name_area = gtk::DrawingArea::builder().build();
+        let wave_area = gtk::DrawingArea::builder().build();
 
         let rootobjs = Rc::new(RefCell::new(vec![
             extract_wave_from_vcd("alu.vcd", vec!["instance".into(), "cin".into()]).unwrap(),
@@ -51,7 +44,7 @@ impl WaveViewer {
         ]));
 
         name_area.set_draw_func(
-            glib::clone!(@strong rootobjs => move |_area, cr, width, _height| {
+            glib::clone!(@strong rootobjs => move |area, cr, width, _height| {
                 cr.set_source_rgb(0.0, 0.0, 0.0);
                 cr.paint().unwrap();
 
@@ -59,11 +52,13 @@ impl WaveViewer {
                 for wobj in rootobjs.borrow().iter() {
                     y += draw_wave_name(cr, y, width, wobj);
                 }
+
+                area.set_content_height(y as i32);
             }),
         );
 
         wave_area.set_draw_func(
-            glib::clone!(@strong rootobjs => move |_area, cr, width, _height| {
+            glib::clone!(@strong rootobjs => move |area, cr, width, _height| {
                 cr.set_source_rgb(0.0, 0.0, 0.0);
                 cr.paint().unwrap();
 
@@ -71,6 +66,8 @@ impl WaveViewer {
                 for wobj in rootobjs.borrow().iter() {
                     y += draw_wave(cr, y, width, wobj);
                 }
+
+                area.set_content_height(y as i32);
             }),
         );
 
@@ -104,20 +101,26 @@ impl WaveViewer {
                             .child(&name_area)
                             .vscrollbar_policy(gtk::PolicyType::Never)
                             .hscrollbar_policy(gtk::PolicyType::Automatic)
+                            .vexpand(true)
+                            .hexpand(true)
                             .build(),
                     )
                     .end_child(
                         &gtk::ScrolledWindow::builder()
                             .child(&wave_area)
                             .vscrollbar_policy(gtk::PolicyType::Never)
-                            .hscrollbar_policy(gtk::PolicyType::Always)
+                            .hscrollbar_policy(gtk::PolicyType::Never)
+                            .vexpand(true)
+                            .hexpand(true)
                             .build(),
                     )
                     .wide_handle(true)
+                    .position(100)
                     .build(),
             )
-            .min_content_height(400)
+            .min_content_height(600)
             .vscrollbar_policy(gtk::PolicyType::Always)
+            .hscrollbar_policy(gtk::PolicyType::Never)
             .build();
 
         let vbox = gtk::Box::builder()
