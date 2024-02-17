@@ -12,15 +12,22 @@ use vcd::*;
 
 type SimTime = u64;
 
-#[derive(Clone, Debug, Default)]
-pub struct WaveValue {
-    pub time: SimTime,
-    pub value: String,
+#[derive(Clone, PartialEq, Debug)]
+pub enum WaveValue {
+    Scalar(vcd::Value),
+    Vector(vcd::Vector),
+    Custom(String),
 }
 
-impl WaveValue {
-    fn new(time: SimTime, value: String) -> WaveValue {
-        WaveValue { time, value }
+#[derive(Clone, Debug)]
+pub struct WaveChangePoint {
+    pub time: SimTime,
+    pub value: WaveValue,
+}
+
+impl WaveChangePoint {
+    fn new(time: SimTime, value: WaveValue) -> WaveChangePoint {
+        WaveChangePoint { time, value }
     }
 }
 
@@ -41,7 +48,7 @@ impl WaveViewer {
         let rootobjs = Rc::new(RefCell::new(vec![
             extract_wave_from_vcd("alu.vcd", vec!["instance".into(), "cin".into()]).unwrap(),
             extract_wave_from_vcd("alu.vcd", vec!["instance".into(), "cout".into()]).unwrap(),
-            extract_wave_from_vcd("alu.vcd", vec!["instance".into(), "n".into()]).unwrap(),
+            extract_wave_from_vcd("alu.vcd", vec!["instance".into(), "cmd[1:0]".into()]).unwrap(),
         ]));
 
         name_area.set_draw_func(
@@ -256,39 +263,68 @@ fn draw_wave(cr: &gtk::cairo::Context, y: u64, width: i32, wobj: &WaveObject) ->
                 let section_top = y + MARGIN_UP_DOWN;
                 let section_bottom = y + ROW_HEIGHT - MARGIN_UP_DOWN;
 
-                let section_value = if a.value == "0" { 0 } else { 1 };
                 let is_value_changed = a.value != b.value;
 
-                cr.line_to(
-                    section_left as f64,
-                    if section_value == 0 {
-                        section_bottom as f64
-                    } else {
-                        section_top as f64
-                    },
-                );
-                cr.line_to(
-                    section_right as f64,
-                    if section_value == 0 {
-                        section_bottom as f64
-                    } else {
-                        section_top as f64
-                    },
-                );
-                if is_value_changed {
-                    cr.line_to(
-                        section_right as f64,
-                        if section_value == 0 {
-                            section_top as f64
-                        } else {
-                            section_bottom as f64
-                        },
-                    );
+                let value_to_hline_y_pos = |val: &vcd::Value| -> u64 {
+                    match val {
+                        vcd::Value::V0 => section_top,
+                        vcd::Value::V1 => section_bottom,
+                        vcd::Value::X => section_top + ROW_HEIGHT / 2,
+                        vcd::Value::Z => section_top + ROW_HEIGHT / 2,
+                    }
+                };
+
+                match (&a.value, &b.value) {
+                    (WaveValue::Scalar(v1), WaveValue::Scalar(v2)) => {
+                        cr.line_to(section_left as f64, value_to_hline_y_pos(v1) as f64);
+                        cr.line_to(section_right as f64, value_to_hline_y_pos(v1) as f64);
+                        cr.line_to(section_right as f64, value_to_hline_y_pos(v2) as f64);
+                    }
+                    (WaveValue::Vector(v1), WaveValue::Vector(_v2)) => {
+                        cr.line_to(section_left as f64, section_top as f64);
+                        cr.line_to(section_right as f64, section_top as f64);
+                        cr.stroke().unwrap();
+
+                        cr.move_to(section_left as f64, section_bottom as f64);
+                        cr.line_to(section_right as f64, section_bottom as f64);
+                        cr.stroke().unwrap();
+
+                        if is_value_changed {
+                            cr.move_to(section_right as f64, section_top as f64);
+                            cr.line_to(section_right as f64, section_bottom as f64);
+                            cr.stroke().unwrap();
+                        }
+
+                        cr.move_to((section_left + 2) as f64, (section_bottom - 2) as f64);
+                        cr.show_text(&v1.to_string()).ok();
+                        cr.stroke().unwrap();
+                    }
+                    (WaveValue::Custom(v1), WaveValue::Custom(_v2)) => {
+                        cr.line_to(section_left as f64, section_top as f64);
+                        cr.line_to(section_right as f64, section_top as f64);
+                        cr.stroke().unwrap();
+
+                        cr.move_to(section_left as f64, section_bottom as f64);
+                        cr.line_to(section_right as f64, section_bottom as f64);
+                        cr.stroke().unwrap();
+
+                        if is_value_changed {
+                            cr.move_to(section_right as f64, section_top as f64);
+                            cr.line_to(section_right as f64, section_bottom as f64);
+                            cr.stroke().unwrap();
+                        }
+
+                        cr.move_to((section_left + 2) as f64, (section_bottom - 2) as f64);
+                        cr.show_text(&v1.to_string()).ok();
+                        cr.stroke().unwrap();
+                    }
+                    _ => (),
                 }
-                cr.stroke().unwrap();
             }
         }
     }
+
+    cr.stroke().unwrap();
 
     cr.move_to(0 as f64, (y + ROW_HEIGHT) as f64);
     cr.line_to(width as f64, (y + ROW_HEIGHT) as f64);
@@ -297,25 +333,34 @@ fn draw_wave(cr: &gtk::cairo::Context, y: u64, width: i32, wobj: &WaveObject) ->
     ROW_HEIGHT
 }
 
-fn get_wave<T: BufRead>(id: &IdCode, parser: &mut Parser<T>) -> Result<Vec<WaveValue>, Error> {
+fn get_wave<T: BufRead>(
+    id: &IdCode,
+    parser: &mut Parser<T>,
+) -> Result<Vec<WaveChangePoint>, Error> {
     let mut current_time: SimTime = 0;
-    let mut wave: Vec<WaveValue> = vec![];
+    let mut wave: Vec<WaveChangePoint> = vec![];
     while let Some(cmd) = parser.next().transpose()? {
         match cmd {
             Command::Timestamp(t) => {
                 current_time = t;
             }
             Command::ChangeScalar(i, v) if i == *id => {
-                wave.push(WaveValue::new(current_time, v.to_string()));
+                wave.push(WaveChangePoint::new(current_time, WaveValue::Scalar(v)));
             }
             Command::ChangeVector(i, v) if i == *id => {
-                wave.push(WaveValue::new(current_time, v.to_string()));
+                wave.push(WaveChangePoint::new(current_time, WaveValue::Vector(v)));
             }
             Command::ChangeReal(i, v) if i == *id => {
-                wave.push(WaveValue::new(current_time, v.to_string()));
+                wave.push(WaveChangePoint::new(
+                    current_time,
+                    WaveValue::Custom(v.to_string()),
+                ));
             }
             Command::ChangeString(i, v) if i == *id => {
-                wave.push(WaveValue::new(current_time, v.to_string()));
+                wave.push(WaveChangePoint::new(
+                    current_time,
+                    WaveValue::Custom(v.to_string()),
+                ));
             }
             _ => (),
         }

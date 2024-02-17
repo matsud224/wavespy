@@ -1,5 +1,5 @@
 mod imp;
-use crate::wave_viewer::WaveValue;
+use crate::wave_viewer::WaveChangePoint;
 use glib::Object;
 use gtk::glib::property::PropertySet;
 use gtk::glib::{self, subclass::types::ObjectSubclassIsExt};
@@ -12,7 +12,7 @@ glib::wrapper! {
 }
 
 impl WaveObject {
-    pub fn new(name: String, path: Vec<String>, data: Vec<WaveValue>) -> Self {
+    pub fn new(name: String, path: Vec<String>, data: Vec<WaveChangePoint>) -> Self {
         let obj: Self = Object::builder().build();
         obj.imp().data.set(WaveData {
             name,
@@ -41,7 +41,7 @@ impl WaveObject {
 pub struct WaveData {
     pub name: String,
     pub path: Vec<String>,
-    pub data: Vec<WaveValue>,
+    pub data: Vec<WaveChangePoint>,
     pub y_position: Cell<f32>,
     pub height: Cell<f32>,
 }
