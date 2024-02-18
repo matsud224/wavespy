@@ -35,7 +35,7 @@ pub struct WaveViewer {
     pub pane: gtk::Box,
 }
 
-static ROW_HEIGHT: u64 = 25;
+static ROW_HEIGHT: u64 = 30;
 static MARGIN_UP_DOWN: u64 = 5;
 static MARGIN_SIDE: u64 = 5;
 
@@ -120,6 +120,24 @@ impl WaveViewer {
         hbox.append(&entry);
         hbox.append(&button);
 
+        let scroll_hbox = gtk::Box::builder()
+            .orientation(gtk::Orientation::Horizontal)
+            .build();
+        let wave_scrollbar = gtk::Scrollbar::builder()
+            .adjustment(&gtk::Adjustment::new(
+                10.0, 0.0, 10000000.0, 1.0, 1.0, 1000.0,
+            ))
+            .hexpand(true)
+            .build();
+        scroll_hbox.append(&gtk::Button::from_icon_name("go-first-symbolic"));
+        scroll_hbox.append(&gtk::Button::from_icon_name("go-last-symbolic"));
+        scroll_hbox.append(&gtk::Button::from_icon_name("go-previous-symbolic"));
+        scroll_hbox.append(&gtk::Button::from_icon_name("go-next-symbolic"));
+        scroll_hbox.append(&gtk::Separator::new(gtk::Orientation::Vertical));
+        scroll_hbox.append(&gtk::Label::new(Some("0 ns")));
+        scroll_hbox.append(&gtk::Separator::new(gtk::Orientation::Vertical));
+        scroll_hbox.append(&wave_scrollbar);
+
         let main_area = gtk::ScrolledWindow::builder()
             .child(
                 &gtk::Paned::builder()
@@ -148,15 +166,7 @@ impl WaveViewer {
                             )
                             .build(),
                     )
-                    .end_child(
-                        &gtk::ScrolledWindow::builder()
-                            .child(&wave_area)
-                            .vscrollbar_policy(gtk::PolicyType::Never)
-                            .hscrollbar_policy(gtk::PolicyType::Never)
-                            .vexpand(true)
-                            .hexpand(true)
-                            .build(),
-                    )
+                    .end_child(&wave_area)
                     .wide_handle(true)
                     .position(200)
                     .build(),
@@ -171,6 +181,7 @@ impl WaveViewer {
             .build();
         vbox.append(&hbox);
         vbox.append(&main_area);
+        vbox.append(&scroll_hbox);
 
         WaveViewer { pane: vbox }
     }
@@ -243,7 +254,7 @@ fn draw_wave(cr: &gtk::cairo::Context, y: u64, width: i32, wobj: &WaveObject) ->
     let wdata = wobj.wave_data();
     let wave = &wdata.borrow().data;
     let start_time: u64 = 0;
-    let end_time: u64 = 600000;
+    let end_time: u64 = 50000;
 
     cr.set_source_rgb(1.0, 1.0, 1.0);
     cr.set_line_join(gtk::cairo::LineJoin::Bevel);
