@@ -1,6 +1,5 @@
 mod signal_finder;
 mod util;
-mod wave_object;
 mod wave_viewer;
 use crate::signal_finder::SignalFinder;
 use crate::wave_viewer::WaveViewer;

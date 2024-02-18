@@ -1,4 +1,3 @@
-use crate::wave_object::WaveObject;
 use gtk::glib;
 use gtk::prelude::*;
 use std::cell::RefCell;
@@ -28,6 +27,19 @@ pub struct WaveChangePoint {
 impl WaveChangePoint {
     fn new(time: SimTime, value: WaveValue) -> WaveChangePoint {
         WaveChangePoint { time, value }
+    }
+}
+
+#[derive(Debug, Default, Clone)]
+pub struct WaveData {
+    pub name: String,
+    pub path: Vec<String>,
+    pub data: Vec<WaveChangePoint>,
+}
+
+impl WaveData {
+    fn new(name: String, path: Vec<String>, data: Vec<WaveChangePoint>) -> Self {
+        WaveData { name, path, data }
     }
 }
 
@@ -214,9 +226,8 @@ fn draw_text(cr: &gtk::cairo::Context, y: u64, width: i32, align: Align, text: &
     cr.show_text(text).ok();
 }
 
-fn draw_wave_name(cr: &gtk::cairo::Context, y: u64, width: i32, wobj: &WaveObject) -> (u64, u64) {
-    let wdata = wobj.wave_data();
-    let text = wdata.borrow().name.clone();
+fn draw_wave_name(cr: &gtk::cairo::Context, y: u64, width: i32, wdata: &WaveData) -> (u64, u64) {
+    let text = wdata.name.clone();
     let text_ext = cr.text_extents(&text).unwrap();
 
     cr.set_source_rgb(1.0, 1.0, 1.0);
@@ -232,8 +243,7 @@ fn draw_wave_name(cr: &gtk::cairo::Context, y: u64, width: i32, wobj: &WaveObjec
     (MARGIN_SIDE * 2 + text_ext.width() as u64, ROW_HEIGHT)
 }
 
-fn draw_wave_value(cr: &gtk::cairo::Context, y: u64, width: i32, wobj: &WaveObject) -> (u64, u64) {
-    let _wdata = wobj.wave_data();
+fn draw_wave_value(cr: &gtk::cairo::Context, y: u64, width: i32, _wdata: &WaveData) -> (u64, u64) {
     let text = ((width as u64 + y) % 2).to_string().repeat(32);
     let text_ext = cr.text_extents(&text).unwrap();
 
@@ -250,9 +260,8 @@ fn draw_wave_value(cr: &gtk::cairo::Context, y: u64, width: i32, wobj: &WaveObje
     (MARGIN_SIDE * 2 + text_ext.width() as u64, ROW_HEIGHT)
 }
 
-fn draw_wave(cr: &gtk::cairo::Context, y: u64, width: i32, wobj: &WaveObject) -> u64 {
-    let wdata = wobj.wave_data();
-    let wave = &wdata.borrow().data;
+fn draw_wave(cr: &gtk::cairo::Context, y: u64, width: i32, wdata: &WaveData) -> u64 {
+    let wave = &wdata.data;
     let start_time: u64 = 0;
     let end_time: u64 = 50000;
 
@@ -379,10 +388,10 @@ fn get_wave<T: BufRead>(
     Ok(wave)
 }
 
-fn extract_wave_from_vcd(filename: &str, path: Vec<String>) -> Result<WaveObject, Error> {
+fn extract_wave_from_vcd(filename: &str, path: Vec<String>) -> Result<WaveData, Error> {
     let mut reader = Parser::new(BufReader::new(File::open(filename)?));
     let header = reader.parse_header()?;
     let var = &header.find_var(&path).unwrap();
     let wave = get_wave(&var.code, &mut reader).expect("failed to get data");
-    Ok(WaveObject::new(path.join("."), path, wave))
+    Ok(WaveData::new(path.join("."), path, wave))
 }
