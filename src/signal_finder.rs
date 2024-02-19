@@ -1,13 +1,18 @@
+use std::cell::RefCell;
+use std::rc::Rc;
+
 use gtk::glib;
 use gtk::prelude::*;
 use vcd::*;
+
+use crate::wave_viewer;
 
 pub struct SignalFinder {
     pub pane: gtk::Paned,
 }
 
 impl SignalFinder {
-    pub fn new(hierarchy: Vec<ScopeItem>) -> SignalFinder {
+    pub fn new(hierarchy: Vec<ScopeItem>, wview: Rc<wave_viewer::WaveViewer>) -> SignalFinder {
         let scope_view = gtk::TreeView::builder().headers_visible(false).build();
         let scope_store = gtk::TreeStore::new(&[glib::Type::STRING, glib::Type::STRING]);
         create_scope_model(&scope_store, None, &hierarchy);
@@ -30,19 +35,36 @@ impl SignalFinder {
             .end_child(&gtk::ScrolledWindow::builder().child(&var_view).build())
             .build();
 
-        var_view.connect_row_activated(|_, path, _| {
-            println!("{:?}", path.indices());
-        });
+        let selected_hier: Rc<RefCell<Option<Vec<String>>>> = Rc::new(RefCell::new(None));
 
-        scope_view.connect_row_activated(move |_, path, _| {
+        var_view.connect_row_activated(
+            glib::clone!(@strong selected_hier, @strong wview => move |var_view, path, _| {
+                if let Some(m) = var_view.model() {
+                    if let Some(it) = m.iter(path) {
+                        if let Some(hier) = selected_hier.borrow().as_ref() {
+                            let var_name = m.get_value(&it, 1).get::<String>().unwrap();
+                            let var_full_path = match hier[..] {
+                                [] => var_name,
+                                _ => format!("{}.{}", hier.join("."), var_name)
+                            };
+                            wview.add_wave_by_name(&var_full_path);
+                        }
+                    }
+                }
+            }),
+        );
+
+        scope_view.connect_row_activated(glib::clone!(@strong selected_hier => move |_, path, _| {
             let var_store = gtk::TreeStore::new(&[glib::Type::STRING, glib::Type::STRING]);
+            let (items, hier_strs) = get_vars(&hierarchy, path.indices().as_slice());
             create_var_model(
                 &var_store,
                 None,
-                &get_vars(&hierarchy, path.indices().as_slice()),
+                &items,
             );
+            selected_hier.borrow_mut().replace(hier_strs);
             var_view.set_model(Some(&var_store));
-        });
+        }));
 
         SignalFinder { pane }
     }
@@ -104,22 +126,26 @@ fn create_scope_model(
     }
 }
 
-fn get_vars(items: &[ScopeItem], indices: &[i32]) -> Vec<ScopeItem> {
+fn get_vars(items: &[ScopeItem], indices: &[i32]) -> (Vec<ScopeItem>, Vec<String>) {
     let mut current_scope = Vec::from(items);
+    let mut hier_str_vec: Vec<String> = vec![];
     let (_, rest) = indices.split_first().unwrap();
     for idx in rest {
-        if let ScopeItem::Scope(Scope { items, .. }) = current_scope
+        if let ScopeItem::Scope(Scope {
+            items, identifier, ..
+        }) = current_scope
             .into_iter()
             .filter(|item| matches!(item, ScopeItem::Scope(_)))
             .nth(*idx as usize)
             .unwrap()
         {
             current_scope = items;
+            hier_str_vec.push(identifier);
         } else {
             panic!("ScopeItem Changed");
         }
     }
-    current_scope
+    (current_scope, hier_str_vec)
 }
 
 fn create_var_model(

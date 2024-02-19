@@ -45,6 +45,10 @@ impl WaveData {
 
 pub struct WaveViewer {
     pub pane: gtk::Box,
+    name_area: gtk::DrawingArea,
+    value_area: gtk::DrawingArea,
+    wave_area: gtk::DrawingArea,
+    waves: Rc<RefCell<Vec<WaveData>>>,
 }
 
 static ROW_HEIGHT: u64 = 30;
@@ -52,24 +56,24 @@ static MARGIN_UP_DOWN: u64 = 5;
 static MARGIN_SIDE: u64 = 5;
 
 impl WaveViewer {
-    pub fn new(_parent: &impl IsA<gtk::Window>) -> WaveViewer {
+    pub fn new() -> WaveViewer {
         let name_area = gtk::DrawingArea::builder().build();
         let value_area = gtk::DrawingArea::builder().build();
         let wave_area = gtk::DrawingArea::builder().build();
 
-        let rootobjs = Rc::new(RefCell::new(vec![
+        let waves = Rc::new(RefCell::new(vec![
             extract_wave_from_vcd("alu.vcd", vec!["instance".into(), "cin".into()]).unwrap(),
             extract_wave_from_vcd("alu.vcd", vec!["instance".into(), "cout".into()]).unwrap(),
             extract_wave_from_vcd("alu.vcd", vec!["instance".into(), "cmd[1:0]".into()]).unwrap(),
         ]));
 
         name_area.set_draw_func(
-            glib::clone!(@strong rootobjs => move |area, cr, width, _height| {
+            glib::clone!(@strong waves => move |area, cr, width, _height| {
                 draw_background(cr);
 
                 let mut max_w : u64 = 0;
                 let mut y = 0;
-                for wobj in rootobjs.borrow().iter() {
+                for wobj in waves.borrow().iter() {
                     let (w, h) = draw_wave_name(cr, y, width, wobj);
                     y += h;
                     max_w = u64::max(max_w, w);
@@ -81,12 +85,12 @@ impl WaveViewer {
         );
 
         value_area.set_draw_func(
-            glib::clone!(@strong rootobjs => move |area, cr, width, _height| {
+            glib::clone!(@strong waves => move |area, cr, width, _height| {
                 draw_background(cr);
 
                 let mut max_w : u64 = 0;
                 let mut y = 0;
-                for wobj in rootobjs.borrow().iter() {
+                for wobj in waves.borrow().iter() {
                     let (w, h) = draw_wave_value(cr, y, width, wobj);
                     y += h;
                     max_w = u64::max(max_w, w);
@@ -98,39 +102,17 @@ impl WaveViewer {
         );
 
         wave_area.set_draw_func(
-            glib::clone!(@strong rootobjs => move |area, cr, width, _height| {
+            glib::clone!(@strong waves => move |area, cr, width, _height| {
                 draw_background(cr);
 
                 let mut y = 0;
-                for wobj in rootobjs.borrow().iter() {
+                for wobj in waves.borrow().iter() {
                     y += draw_wave(cr, y, width, wobj);
                 }
 
                 area.set_content_height(y as i32);
             }),
         );
-
-        let hbox = gtk::Box::builder()
-            .orientation(gtk::Orientation::Horizontal)
-            .build();
-        let entry = gtk::Entry::builder()
-            .placeholder_text("signal name")
-            .build();
-        let button = gtk::Button::builder().label("Add signal").build();
-        button.connect_clicked(
-            glib::clone!(@strong entry, @strong rootobjs, @strong name_area, @strong value_area, @strong wave_area => move |_| {
-                let v :Vec<String> = entry.text().split('.').map(String::from).collect();
-                let wobj = extract_wave_from_vcd("alu.vcd", v);
-                if let Ok(wobj) = wobj {
-                    rootobjs.borrow_mut().push(wobj);
-                    name_area.queue_draw();
-                    value_area.queue_draw();
-                    wave_area.queue_draw();
-                }
-            }),
-        );
-        hbox.append(&entry);
-        hbox.append(&button);
 
         let scroll_hbox = gtk::Box::builder()
             .orientation(gtk::Orientation::Horizontal)
@@ -191,11 +173,31 @@ impl WaveViewer {
             .orientation(gtk::Orientation::Vertical)
             .homogeneous(false)
             .build();
-        vbox.append(&hbox);
         vbox.append(&main_area);
         vbox.append(&scroll_hbox);
 
-        WaveViewer { pane: vbox }
+        WaveViewer {
+            pane: vbox,
+            name_area,
+            value_area,
+            wave_area,
+            waves,
+        }
+    }
+
+    pub fn add_wave_by_name(&self, name: &str) {
+        let v: Vec<String> = name.split('.').map(String::from).collect();
+        let wdata = extract_wave_from_vcd("alu.vcd", v);
+        if let Ok(wdata) = wdata {
+            self.waves.borrow_mut().push(wdata);
+            self.redraw();
+        }
+    }
+
+    fn redraw(&self) {
+        self.name_area.queue_draw();
+        self.value_area.queue_draw();
+        self.wave_area.queue_draw();
     }
 }
 

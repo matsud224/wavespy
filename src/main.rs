@@ -6,6 +6,7 @@ use crate::wave_viewer::WaveViewer;
 use gtk::prelude::*;
 use std::fs::File;
 use std::io::BufReader;
+use std::rc::Rc;
 use vcd::*;
 
 fn main() {
@@ -26,8 +27,8 @@ fn build_ui(application: &gtk::Application) {
         File::open("alu.vcd").expect("open file failed"),
     ));
     let header = reader.parse_header().expect("parse header failed");
-    let signal_finder = SignalFinder::new(header.items);
-    let wave_viewer = WaveViewer::new(&window);
+    let wave_viewer = Rc::new(WaveViewer::new());
+    let signal_finder = SignalFinder::new(header.items, wave_viewer.clone());
 
     let root_pane = gtk::Paned::builder()
         .orientation(gtk::Orientation::Horizontal)
