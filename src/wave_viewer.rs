@@ -238,6 +238,7 @@ fn draw_wave_name(cr: &gtk::cairo::Context, width: i32, wdata: &WaveData) -> (u6
     draw_text(cr, 0, width, Align::Left, &text);
     cr.stroke().unwrap();
 
+    cr.set_source_rgb(0.0, 0.0, 0.4);
     cr.move_to(0 as f64, ROW_HEIGHT as f64);
     cr.line_to(width as f64, ROW_HEIGHT as f64);
     cr.stroke().unwrap();
@@ -255,6 +256,7 @@ fn draw_wave_value(cr: &gtk::cairo::Context, width: i32, _wdata: &WaveData) -> (
     draw_text(cr, 0, width, Align::Right, &text);
     cr.stroke().unwrap();
 
+    cr.set_source_rgb(0.0, 0.0, 0.4);
     cr.move_to(0 as f64, ROW_HEIGHT as f64);
     cr.line_to(width as f64, ROW_HEIGHT as f64);
     cr.stroke().unwrap();
@@ -348,6 +350,7 @@ fn draw_wave(cr: &gtk::cairo::Context, width: i32, wdata: &WaveData) -> u64 {
 
     cr.stroke().unwrap();
 
+    cr.set_source_rgb(0.0, 0.0, 0.4);
     cr.move_to(0 as f64, ROW_HEIGHT as f64);
     cr.line_to(width as f64, ROW_HEIGHT as f64);
     cr.stroke().unwrap();
