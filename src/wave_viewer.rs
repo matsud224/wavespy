@@ -61,11 +61,7 @@ impl WaveViewer {
         let value_area = gtk::DrawingArea::builder().build();
         let wave_area = gtk::DrawingArea::builder().build();
 
-        let waves = Rc::new(RefCell::new(vec![
-            extract_wave_from_vcd("alu.vcd", vec!["instance".into(), "cin".into()]).unwrap(),
-            extract_wave_from_vcd("alu.vcd", vec!["instance".into(), "cout".into()]).unwrap(),
-            extract_wave_from_vcd("alu.vcd", vec!["instance".into(), "cmd[1:0]".into()]).unwrap(),
-        ]));
+        let waves = Rc::new(RefCell::new(vec![]));
 
         name_area.set_draw_func(
             glib::clone!(@strong waves => move |area, cr, width, _height| {
