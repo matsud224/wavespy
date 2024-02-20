@@ -70,7 +70,8 @@ impl WaveViewer {
                 let mut max_w : u64 = 0;
                 let mut y = 0;
                 for wobj in waves.borrow().iter() {
-                    let (w, h) = draw_wave_name(cr, y, width, wobj);
+                    let (w, h) = draw_wave_name(cr, width, wobj);
+                    cr.translate(0.0, h as f64);
                     y += h;
                     max_w = u64::max(max_w, w);
                 }
@@ -87,7 +88,8 @@ impl WaveViewer {
                 let mut max_w : u64 = 0;
                 let mut y = 0;
                 for wobj in waves.borrow().iter() {
-                    let (w, h) = draw_wave_value(cr, y, width, wobj);
+                    let (w, h) = draw_wave_value(cr,width, wobj);
+                    cr.translate(0.0, h as f64);
                     y += h;
                     max_w = u64::max(max_w, w);
                 }
@@ -103,7 +105,9 @@ impl WaveViewer {
 
                 let mut y = 0;
                 for wobj in waves.borrow().iter() {
-                    y += draw_wave(cr, y, width, wobj);
+                    let h = draw_wave(cr, width, wobj);
+                    cr.translate(0.0, h as f64);
+                    y += h;
                 }
 
                 area.set_content_height(y as i32);
@@ -224,41 +228,41 @@ fn draw_text(cr: &gtk::cairo::Context, y: u64, width: i32, align: Align, text: &
     cr.show_text(text).ok();
 }
 
-fn draw_wave_name(cr: &gtk::cairo::Context, y: u64, width: i32, wdata: &WaveData) -> (u64, u64) {
+fn draw_wave_name(cr: &gtk::cairo::Context, width: i32, wdata: &WaveData) -> (u64, u64) {
     let text = wdata.name.clone();
     let text_ext = cr.text_extents(&text).unwrap();
 
     cr.set_source_rgb(1.0, 1.0, 1.0);
     cr.set_line_join(gtk::cairo::LineJoin::Bevel);
 
-    draw_text(cr, y, width, Align::Left, &text);
+    draw_text(cr, 0, width, Align::Left, &text);
     cr.stroke().unwrap();
 
-    cr.move_to(0 as f64, (y + ROW_HEIGHT) as f64);
-    cr.line_to(width as f64, (y + ROW_HEIGHT) as f64);
+    cr.move_to(0 as f64, ROW_HEIGHT as f64);
+    cr.line_to(width as f64, ROW_HEIGHT as f64);
     cr.stroke().unwrap();
 
     (MARGIN_SIDE * 2 + text_ext.width() as u64, ROW_HEIGHT)
 }
 
-fn draw_wave_value(cr: &gtk::cairo::Context, y: u64, width: i32, _wdata: &WaveData) -> (u64, u64) {
-    let text = ((width as u64 + y) % 2).to_string().repeat(32);
+fn draw_wave_value(cr: &gtk::cairo::Context, width: i32, _wdata: &WaveData) -> (u64, u64) {
+    let text = (width as u64 % 2).to_string().repeat(32);
     let text_ext = cr.text_extents(&text).unwrap();
 
     cr.set_source_rgb(1.0, 1.0, 1.0);
     cr.set_line_join(gtk::cairo::LineJoin::Bevel);
 
-    draw_text(cr, y, width, Align::Right, &text);
+    draw_text(cr, 0, width, Align::Right, &text);
     cr.stroke().unwrap();
 
-    cr.move_to(0 as f64, (y + ROW_HEIGHT) as f64);
-    cr.line_to(width as f64, (y + ROW_HEIGHT) as f64);
+    cr.move_to(0 as f64, ROW_HEIGHT as f64);
+    cr.line_to(width as f64, ROW_HEIGHT as f64);
     cr.stroke().unwrap();
 
     (MARGIN_SIDE * 2 + text_ext.width() as u64, ROW_HEIGHT)
 }
 
-fn draw_wave(cr: &gtk::cairo::Context, y: u64, width: i32, wdata: &WaveData) -> u64 {
+fn draw_wave(cr: &gtk::cairo::Context, width: i32, wdata: &WaveData) -> u64 {
     let wave = &wdata.data;
     let start_time: u64 = 0;
     let end_time: u64 = 50000;
@@ -278,8 +282,8 @@ fn draw_wave(cr: &gtk::cairo::Context, y: u64, width: i32, wdata: &WaveData) -> 
                 let section_right = section_left
                     + ((section_end_time - section_start_time) * (width as u64)
                         / (end_time - start_time + 1));
-                let section_top = y + MARGIN_UP_DOWN;
-                let section_bottom = y + ROW_HEIGHT - MARGIN_UP_DOWN;
+                let section_top = MARGIN_UP_DOWN;
+                let section_bottom = ROW_HEIGHT - MARGIN_UP_DOWN;
 
                 let is_value_changed = a.value != b.value;
 
@@ -344,8 +348,8 @@ fn draw_wave(cr: &gtk::cairo::Context, y: u64, width: i32, wdata: &WaveData) -> 
 
     cr.stroke().unwrap();
 
-    cr.move_to(0 as f64, (y + ROW_HEIGHT) as f64);
-    cr.line_to(width as f64, (y + ROW_HEIGHT) as f64);
+    cr.move_to(0 as f64, ROW_HEIGHT as f64);
+    cr.line_to(width as f64, ROW_HEIGHT as f64);
     cr.stroke().unwrap();
 
     ROW_HEIGHT
